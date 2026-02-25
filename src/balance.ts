@@ -34,8 +34,8 @@ export async function checkBalance(userId: string, token: string): Promise<Balan
 			return { balance: 0, ok: true };
 		}
 
-		const data = (await res.json()) as { balance?: number };
-		const balance = data.balance ?? 0;
+		const data = (await res.json()) as { balance?: string | number; totalAvailable?: number };
+		const balance = data.totalAvailable ?? Number(data.balance) || 0;
 
 		cache.set(userId, { balance, expiry: now + CACHE_TTL_MS });
 		return { balance, ok: balance > 0 };
