@@ -1,3 +1,4 @@
+import { Readable } from "node:stream";
 import type { FastifyInstance } from "fastify";
 import { verifyToken } from "./auth.js";
 import { checkBalance } from "./balance.js";
@@ -128,8 +129,7 @@ export function registerProxyRoute(app: FastifyInstance): void {
 }
 
 /** Convert a Web ReadableStream<Uint8Array> to a Node.js Readable */
-function readableStreamToNodeReadable(webStream: ReadableStream<Uint8Array>): import("stream").Readable {
-	const { Readable } = require("stream") as typeof import("stream");
+function readableStreamToNodeReadable(webStream: ReadableStream<Uint8Array>): Readable {
 	const reader = webStream.getReader();
 
 	return new Readable({
