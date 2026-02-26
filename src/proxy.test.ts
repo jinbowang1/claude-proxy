@@ -55,7 +55,7 @@ describe("proxy route /v1/messages", () => {
 		mockFetch = vi.fn();
 		vi.stubGlobal("fetch", mockFetch);
 		vi.mocked(verifyToken).mockResolvedValue({ userId: "user-1" });
-		vi.mocked(checkBalance).mockResolvedValue({ balance: 10, freeTokens: 0, ok: true });
+		vi.mocked(checkBalance).mockResolvedValue({ balance: 10, totalAvailable: 0, ok: true });
 	});
 
 	afterEach(() => {
@@ -92,7 +92,7 @@ describe("proxy route /v1/messages", () => {
 		it("returns 402 when balance is insufficient", async () => {
 			vi.mocked(checkBalance).mockResolvedValue({
 				balance: 0,
-				freeTokens: 0,
+				totalAvailable: 0,
 				ok: false,
 			});
 			const app = createApp();
@@ -109,7 +109,7 @@ describe("proxy route /v1/messages", () => {
 		it("returns 503 when billing service is unavailable", async () => {
 			vi.mocked(checkBalance).mockResolvedValue({
 				balance: 0,
-				freeTokens: 0,
+				totalAvailable: 0,
 				ok: false,
 				serviceUnavailable: true,
 			});
@@ -124,10 +124,10 @@ describe("proxy route /v1/messages", () => {
 			expect(res.json().error).toBe("Billing service unavailable");
 		});
 
-		it("passes when freeTokens > 0 even if balance = 0", async () => {
+		it("passes when totalAvailable > 0 even if balance = 0", async () => {
 			vi.mocked(checkBalance).mockResolvedValue({
 				balance: 0,
-				freeTokens: 300000,
+				totalAvailable: 300000,
 				ok: true,
 			});
 			mockFetch.mockResolvedValue(

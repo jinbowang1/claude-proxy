@@ -37,6 +37,8 @@ describe("reportUsage", () => {
 		model: "claude-sonnet-4-6",
 		inputTokens: 1000,
 		outputTokens: 500,
+		cacheReadTokens: 200,
+		cacheCreationTokens: 100,
 		cost: 0.0105,
 	};
 
@@ -55,8 +57,11 @@ describe("reportUsage", () => {
 			provider: "anthropic",
 			inputTokens: 1000,
 			outputTokens: 500,
-			totalTokens: 1500,
+			cacheReadTokens: 200,
+			cacheWriteTokens: 100,
+			totalTokens: 1000 + 500 + 200 + 100,
 			cost: 0.0105,
+			currency: "USD",
 		});
 	});
 
@@ -70,12 +75,14 @@ describe("reportUsage", () => {
 		expect(options.headers["Content-Type"]).toBe("application/json");
 	});
 
-	it("totalTokens equals inputTokens + outputTokens", async () => {
+	it("totalTokens includes input + output + cache tokens", async () => {
 		const report: UsageReport = {
 			userId: "user-2",
 			model: "claude-opus-4-6",
 			inputTokens: 12345,
 			outputTokens: 67890,
+			cacheReadTokens: 1000,
+			cacheCreationTokens: 500,
 			cost: 2.5,
 		};
 		reportUsage("token", report);
@@ -83,7 +90,7 @@ describe("reportUsage", () => {
 		await vi.waitFor(() => expect(mockFetch).toHaveBeenCalledTimes(1));
 
 		const payload = JSON.parse(mockFetch.mock.calls[0]![1].body);
-		expect(payload.totalTokens).toBe(12345 + 67890);
+		expect(payload.totalTokens).toBe(12345 + 67890 + 1000 + 500);
 	});
 
 	it("provider is always 'anthropic'", async () => {
@@ -95,13 +102,15 @@ describe("reportUsage", () => {
 		expect(payload.provider).toBe("anthropic");
 	});
 
-	it("does not include cacheReadTokens, cacheCreationTokens, or costUsd", async () => {
+	it("includes cacheReadTokens, cacheWriteTokens, currency and no costUsd", async () => {
 		reportUsage("token", baseReport);
 
 		await vi.waitFor(() => expect(mockFetch).toHaveBeenCalledTimes(1));
 
 		const payload = JSON.parse(mockFetch.mock.calls[0]![1].body);
-		expect(payload).not.toHaveProperty("cacheReadTokens");
+		expect(payload).toHaveProperty("cacheReadTokens", 200);
+		expect(payload).toHaveProperty("cacheWriteTokens", 100);
+		expect(payload).toHaveProperty("currency", "USD");
 		expect(payload).not.toHaveProperty("cacheCreationTokens");
 		expect(payload).not.toHaveProperty("costUsd");
 	});
@@ -118,6 +127,8 @@ describe("reportUsage", () => {
 			model: "claude-sonnet-4-6",
 			inputTokens: 0,
 			outputTokens: 0,
+			cacheReadTokens: 0,
+			cacheCreationTokens: 0,
 			cost: 0,
 		};
 		reportUsage("token", report);
@@ -202,6 +213,8 @@ describe("retry queue (_processRetryQueue)", () => {
 			model: "claude-sonnet-4-6",
 			inputTokens: 100,
 			outputTokens: 50,
+			cacheReadTokens: 0,
+			cacheCreationTokens: 0,
 			cost: 0.001,
 		});
 
@@ -235,8 +248,11 @@ describe("retry queue (_processRetryQueue)", () => {
 			provider: "anthropic",
 			inputTokens: 100,
 			outputTokens: 50,
+			cacheReadTokens: 0,
+			cacheWriteTokens: 0,
 			totalTokens: 150,
 			cost: 0.001,
+			currency: "USD",
 		});
 	});
 
@@ -249,6 +265,8 @@ describe("retry queue (_processRetryQueue)", () => {
 			model: "claude-sonnet-4-6",
 			inputTokens: 200,
 			outputTokens: 100,
+			cacheReadTokens: 0,
+			cacheCreationTokens: 0,
 			cost: 0.002,
 		});
 
@@ -277,6 +295,8 @@ describe("retry queue (_processRetryQueue)", () => {
 			model: "claude-sonnet-4-6",
 			inputTokens: 100,
 			outputTokens: 50,
+			cacheReadTokens: 0,
+			cacheCreationTokens: 0,
 			cost: 0.001,
 		});
 

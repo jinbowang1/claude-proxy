@@ -2,7 +2,7 @@ import { config } from "./config.js";
 
 interface BalanceResult {
 	balance: number;
-	freeTokens: number;
+	totalAvailable: number;
 	ok: boolean;
 	/** true when the billing server could not be reached */
 	serviceUnavailable?: boolean;
@@ -10,7 +10,7 @@ interface BalanceResult {
 
 interface CacheEntry {
 	balance: number;
-	freeTokens: number;
+	totalAvailable: number;
 	expiry: number;
 }
 
@@ -32,8 +32,8 @@ export async function checkBalance(userId: string, token: string): Promise<Balan
 	if (cached && cached.expiry > now) {
 		return {
 			balance: cached.balance,
-			freeTokens: cached.freeTokens,
-			ok: cached.balance > 0 || cached.freeTokens > 0,
+			totalAvailable: cached.totalAvailable,
+			ok: cached.balance > 0 || cached.totalAvailable > 0,
 		};
 	}
 
@@ -50,12 +50,20 @@ export async function checkBalance(userId: string, token: string): Promise<Balan
 			return fallbackToStaleCache(userId, cached, now);
 		}
 
-		const data = (await res.json()) as { balance?: number; freeTokens?: number };
+		const data = (await res.json()) as {
+			balance?: number;
+			totalAvailable?: number;
+			// legacy fields kept for reference
+			freeTokens?: number;
+			dailyFreeTokens?: number;
+			subscriptionTokens?: number;
+		};
 		const balance = data.balance ?? 0;
-		const freeTokens = data.freeTokens ?? 0;
+		// totalAvailable = dailyFreeTokens + subscriptionTokens + freeTokens (server-calculated)
+		const totalAvailable = data.totalAvailable ?? 0;
 
-		cache.set(userId, { balance, freeTokens, expiry: now + CACHE_TTL_MS });
-		return { balance, freeTokens, ok: balance > 0 || freeTokens > 0 };
+		cache.set(userId, { balance, totalAvailable, expiry: now + CACHE_TTL_MS });
+		return { balance, totalAvailable, ok: balance > 0 || totalAvailable > 0 };
 	} catch (err) {
 		// Network error — fail closed, but allow stale cache within grace period
 		console.warn("Balance check error:", err);
@@ -76,11 +84,11 @@ function fallbackToStaleCache(
 		console.warn(`Using stale cache for user ${userId}`);
 		return {
 			balance: cached.balance,
-			freeTokens: cached.freeTokens,
-			ok: cached.balance > 0 || cached.freeTokens > 0,
+			totalAvailable: cached.totalAvailable,
+			ok: cached.balance > 0 || cached.totalAvailable > 0,
 		};
 	}
-	return { balance: 0, freeTokens: 0, ok: false, serviceUnavailable: true };
+	return { balance: 0, totalAvailable: 0, ok: false, serviceUnavailable: true };
 }
 
 /** Mark cache as expired for a user after usage report (keeps stale entry for fallback) */

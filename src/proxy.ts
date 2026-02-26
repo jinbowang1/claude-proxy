@@ -119,10 +119,12 @@ export function registerProxyRoute(app: FastifyInstance): void {
 							model: resolvedModel,
 							inputTokens,
 							outputTokens,
+							cacheReadTokens,
+							cacheCreationTokens,
 							cost: costUsd,
 						};
 						request.log.info(
-							{ userId: jwt.userId, model: resolvedModel, inputTokens, outputTokens, costUsd: costUsd.toFixed(6) },
+							{ userId: jwt.userId, model: resolvedModel, inputTokens, outputTokens, cacheReadTokens, cacheCreationTokens, costUsd: costUsd.toFixed(6) },
 							"Usage report (non-streaming)",
 						);
 						reportUsage(apiKey, report);
@@ -155,6 +157,8 @@ export function registerProxyRoute(app: FastifyInstance): void {
 					model: resolvedModel,
 					inputTokens: usage.inputTokens,
 					outputTokens: usage.outputTokens,
+					cacheReadTokens: usage.cacheReadTokens,
+					cacheCreationTokens: usage.cacheCreationTokens,
 					cost: costUsd,
 				};
 				request.log.info(

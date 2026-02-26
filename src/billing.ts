@@ -6,6 +6,9 @@ export interface UsageReport {
 	model: string;
 	inputTokens: number;
 	outputTokens: number;
+	cacheReadTokens: number;
+	cacheCreationTokens: number;
+	/** Cost in USD */
 	cost: number;
 }
 
@@ -35,8 +38,15 @@ export function reportUsage(token: string, report: UsageReport): void {
 		provider: "anthropic",
 		inputTokens: report.inputTokens,
 		outputTokens: report.outputTokens,
-		totalTokens: report.inputTokens + report.outputTokens,
+		cacheReadTokens: report.cacheReadTokens,
+		cacheWriteTokens: report.cacheCreationTokens,
+		totalTokens:
+			report.inputTokens +
+			report.outputTokens +
+			report.cacheReadTokens +
+			report.cacheCreationTokens,
 		cost: report.cost,
+		currency: "USD" as const,
 	};
 
 	sendReport(token, payload);
