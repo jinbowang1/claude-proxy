@@ -1,4 +1,3 @@
-import { Readable } from "node:stream";
 import type { FastifyInstance } from "fastify";
 import { verifyToken } from "./auth.js";
 import { checkBalance } from "./balance.js";
@@ -35,8 +34,11 @@ export function registerProxyRoute(app: FastifyInstance): void {
 		}
 
 		// 2. Check balance
-		const { ok: hasBalance } = await checkBalance(jwt.userId, apiKey);
-		if (!hasBalance) {
+		const balanceResult = await checkBalance(jwt.userId, apiKey);
+		if (!balanceResult.ok) {
+			if (balanceResult.serviceUnavailable) {
+				return reply.status(503).send({ error: "Billing service unavailable" });
+			}
 			return reply.status(402).send({ error: "Insufficient balance" });
 		}
 
@@ -90,9 +92,47 @@ export function registerProxyRoute(app: FastifyInstance): void {
 			}
 		}
 
-		// 7. If not streaming or error, pass through directly
+		// 7. If not streaming or error, extract usage from JSON and report
 		if (!upstreamRes.body || !contentType?.includes("text/event-stream")) {
 			const buf = Buffer.from(await upstreamRes.arrayBuffer());
+
+			// Extract usage from non-streaming JSON response for billing
+			if (upstreamRes.ok && contentType?.includes("application/json")) {
+				try {
+					const json = JSON.parse(buf.toString("utf-8"));
+					const usage = json.usage;
+					const resolvedModel = json.model || model;
+					if (usage && (usage.input_tokens > 0 || usage.output_tokens > 0)) {
+						const inputTokens = usage.input_tokens || 0;
+						const outputTokens = usage.output_tokens || 0;
+						const cacheReadTokens = usage.cache_read_input_tokens || 0;
+						const cacheCreationTokens = usage.cache_creation_input_tokens || 0;
+						const costUsd = calculateCostUsd(resolvedModel, {
+							inputTokens,
+							outputTokens,
+							cacheReadTokens,
+							cacheCreationTokens,
+						});
+
+						const report: UsageReport = {
+							userId: jwt.userId,
+							model: resolvedModel,
+							inputTokens,
+							outputTokens,
+							cost: costUsd,
+						};
+						request.log.info(
+							{ userId: jwt.userId, model: resolvedModel, inputTokens, outputTokens, costUsd: costUsd.toFixed(6) },
+							"Usage report (non-streaming)",
+						);
+						reportUsage(apiKey, report);
+					}
+				} catch {
+					// If JSON parsing fails, still send the response
+					request.log.warn("Failed to parse non-streaming response for billing");
+				}
+			}
+
 			return reply.send(buf);
 		}
 
@@ -113,8 +153,9 @@ export function registerProxyRoute(app: FastifyInstance): void {
 				const report: UsageReport = {
 					userId: jwt.userId,
 					model: resolvedModel,
-					usage,
-					costUsd,
+					inputTokens: usage.inputTokens,
+					outputTokens: usage.outputTokens,
+					cost: costUsd,
 				};
 				request.log.info(
 					{ userId: jwt.userId, model: resolvedModel, usage, costUsd: costUsd.toFixed(6) },
@@ -129,7 +170,8 @@ export function registerProxyRoute(app: FastifyInstance): void {
 }
 
 /** Convert a Web ReadableStream<Uint8Array> to a Node.js Readable */
-function readableStreamToNodeReadable(webStream: ReadableStream<Uint8Array>): Readable {
+function readableStreamToNodeReadable(webStream: ReadableStream<Uint8Array>): import("stream").Readable {
+	const { Readable } = require("stream") as typeof import("stream");
 	const reader = webStream.getReader();
 
 	return new Readable({
