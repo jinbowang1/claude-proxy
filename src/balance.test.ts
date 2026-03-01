@@ -23,34 +23,64 @@ describe("checkBalance", () => {
 		vi.restoreAllMocks();
 	});
 
-	it("returns ok:true when balance > 0", async () => {
+	// ────────────────────────────────────────────────
+	// claudeBalance-based ok logic
+	// ────────────────────────────────────────────────
+
+	it("returns ok:true when claudeBalance > 0", async () => {
 		vi.stubGlobal(
 			"fetch",
 			vi.fn().mockResolvedValue({
 				ok: true,
-				json: () => Promise.resolve({ balance: 10.5, totalAvailable: 0 }),
+				json: () => Promise.resolve({ balance: 0, totalAvailable: 0, claudeBalance: 5.25 }),
 			}),
 		);
 
-		const result = await checkBalance("user-1", "token-1");
+		const result = await checkBalance("user-claude", "token-claude");
 		expect(result.ok).toBe(true);
-		expect(result.balance).toBe(10.5);
+		expect(result.balance).toBe(0);
 		expect(result.totalAvailable).toBe(0);
 	});
 
-	it("returns ok:true when totalAvailable > 0 but balance = 0", async () => {
+	it("returns ok:true when totalAvailable > 0 (non-Claude user)", async () => {
 		vi.stubGlobal(
 			"fetch",
 			vi.fn().mockResolvedValue({
 				ok: true,
-				json: () => Promise.resolve({ balance: 0, totalAvailable: 300000 }),
+				json: () => Promise.resolve({ balance: 0, totalAvailable: 300000, claudeBalance: 0 }),
 			}),
 		);
 
 		const result = await checkBalance("user-freeonly", "token-2");
 		expect(result.ok).toBe(true);
-		expect(result.balance).toBe(0);
 		expect(result.totalAvailable).toBe(300000);
+	});
+
+	it("returns ok:true when both claudeBalance and totalAvailable > 0", async () => {
+		vi.stubGlobal(
+			"fetch",
+			vi.fn().mockResolvedValue({
+				ok: true,
+				json: () => Promise.resolve({ balance: 10, totalAvailable: 100000, claudeBalance: 3.0 }),
+			}),
+		);
+
+		const result = await checkBalance("user-both", "token-both");
+		expect(result.ok).toBe(true);
+	});
+
+	it("returns ok:false when claudeBalance = 0 and totalAvailable = 0", async () => {
+		vi.stubGlobal(
+			"fetch",
+			vi.fn().mockResolvedValue({
+				ok: true,
+				json: () => Promise.resolve({ balance: 0, totalAvailable: 0, claudeBalance: 0 }),
+			}),
+		);
+
+		const result = await checkBalance("user-broke", "token-3");
+		expect(result.ok).toBe(false);
+		expect(result.serviceUnavailable).toBeUndefined();
 	});
 
 	it("returns ok:true when user has dailyFreeTokens (via totalAvailable)", async () => {
@@ -64,6 +94,7 @@ describe("checkBalance", () => {
 					dailyFreeTokens: 100000,
 					subscriptionTokens: 0,
 					totalAvailable: 100000,
+					claudeBalance: 0,
 				}),
 			}),
 		);
@@ -73,7 +104,7 @@ describe("checkBalance", () => {
 		expect(result.totalAvailable).toBe(100000);
 	});
 
-	it("returns ok:false when both balance and totalAvailable are 0", async () => {
+	it("defaults missing claudeBalance to 0", async () => {
 		vi.stubGlobal(
 			"fetch",
 			vi.fn().mockResolvedValue({
@@ -82,12 +113,12 @@ describe("checkBalance", () => {
 			}),
 		);
 
-		const result = await checkBalance("user-broke", "token-3");
+		const result = await checkBalance("user-legacy", "token-legacy");
+		// claudeBalance defaults to 0, totalAvailable = 0 → ok: false
 		expect(result.ok).toBe(false);
-		expect(result.serviceUnavailable).toBeUndefined();
 	});
 
-	it("defaults missing fields to 0", async () => {
+	it("defaults all missing fields to 0", async () => {
 		vi.stubGlobal(
 			"fetch",
 			vi.fn().mockResolvedValue({
@@ -105,7 +136,7 @@ describe("checkBalance", () => {
 	it("sends correct Authorization header", async () => {
 		const mockFetch = vi.fn().mockResolvedValue({
 			ok: true,
-			json: () => Promise.resolve({ balance: 1, totalAvailable: 0 }),
+			json: () => Promise.resolve({ balance: 1, totalAvailable: 100, claudeBalance: 1 }),
 		});
 		vi.stubGlobal("fetch", mockFetch);
 
@@ -118,10 +149,14 @@ describe("checkBalance", () => {
 		});
 	});
 
+	// ────────────────────────────────────────────────
+	// Caching with claudeBalance
+	// ────────────────────────────────────────────────
+
 	it("uses fresh cache on second call within TTL", async () => {
 		const mockFetch = vi.fn().mockResolvedValue({
 			ok: true,
-			json: () => Promise.resolve({ balance: 5, totalAvailable: 100 }),
+			json: () => Promise.resolve({ balance: 5, totalAvailable: 100, claudeBalance: 2.5 }),
 		});
 		vi.stubGlobal("fetch", mockFetch);
 
@@ -136,6 +171,27 @@ describe("checkBalance", () => {
 		expect(result.balance).toBe(5);
 		expect(result.totalAvailable).toBe(100);
 	});
+
+	it("cached claudeBalance is used for ok check", async () => {
+		const mockFetch = vi.fn().mockResolvedValue({
+			ok: true,
+			json: () => Promise.resolve({ balance: 0, totalAvailable: 0, claudeBalance: 1.0 }),
+		});
+		vi.stubGlobal("fetch", mockFetch);
+
+		// Populate cache
+		const first = await checkBalance("user-cache-claude", "token-cc");
+		expect(first.ok).toBe(true);
+
+		// From cache — should still return ok:true based on claudeBalance
+		const second = await checkBalance("user-cache-claude", "token-cc");
+		expect(second.ok).toBe(true);
+		expect(mockFetch).toHaveBeenCalledTimes(1);
+	});
+
+	// ────────────────────────────────────────────────
+	// Fail-closed behavior
+	// ────────────────────────────────────────────────
 
 	describe("fail-closed behavior", () => {
 		it("returns serviceUnavailable on HTTP error with no cache", async () => {
@@ -165,10 +221,10 @@ describe("checkBalance", () => {
 		});
 
 		it("falls back to stale cache within grace period on server error", async () => {
-			// First: populate cache
+			// First: populate cache with claudeBalance
 			const mockFetch = vi.fn().mockResolvedValue({
 				ok: true,
-				json: () => Promise.resolve({ balance: 20, totalAvailable: 500 }),
+				json: () => Promise.resolve({ balance: 20, totalAvailable: 500, claudeBalance: 3.0 }),
 			});
 			vi.stubGlobal("fetch", mockFetch);
 			await checkBalance("user-stale", "token-7");
@@ -185,7 +241,7 @@ describe("checkBalance", () => {
 			});
 
 			const result = await checkBalance("user-stale", "token-7");
-			expect(result.ok).toBe(true);
+			expect(result.ok).toBe(true); // stale cache has claudeBalance=3 or totalAvailable=500
 			expect(result.balance).toBe(20);
 			expect(result.totalAvailable).toBe(500);
 			expect(result.serviceUnavailable).toBeUndefined();
@@ -197,7 +253,7 @@ describe("checkBalance", () => {
 			// Populate cache
 			const mockFetch = vi.fn().mockResolvedValue({
 				ok: true,
-				json: () => Promise.resolve({ balance: 20, totalAvailable: 500 }),
+				json: () => Promise.resolve({ balance: 20, totalAvailable: 500, claudeBalance: 2.0 }),
 			});
 			vi.stubGlobal("fetch", mockFetch);
 			await checkBalance("user-expired", "token-8");
@@ -216,12 +272,15 @@ describe("checkBalance", () => {
 		});
 	});
 
+	// ────────────────────────────────────────────────
+	// invalidateBalanceCache
+	// ────────────────────────────────────────────────
+
 	describe("invalidateBalanceCache", () => {
 		it("marks cache as expired but keeps entry for stale fallback", async () => {
-			// Populate cache
 			const mockFetch = vi.fn().mockResolvedValue({
 				ok: true,
-				json: () => Promise.resolve({ balance: 50, totalAvailable: 1000 }),
+				json: () => Promise.resolve({ balance: 50, totalAvailable: 1000, claudeBalance: 5.0 }),
 			});
 			vi.stubGlobal("fetch", mockFetch);
 			await checkBalance("user-inv", "token-9");
@@ -236,10 +295,9 @@ describe("checkBalance", () => {
 		});
 
 		it("preserves stale cache for fallback after invalidation", async () => {
-			// Populate cache
 			const mockFetch = vi.fn().mockResolvedValue({
 				ok: true,
-				json: () => Promise.resolve({ balance: 30, totalAvailable: 200 }),
+				json: () => Promise.resolve({ balance: 30, totalAvailable: 200, claudeBalance: 1.5 }),
 			});
 			vi.stubGlobal("fetch", mockFetch);
 			await checkBalance("user-inv-fallback", "token-10");
@@ -250,7 +308,7 @@ describe("checkBalance", () => {
 			// Server goes down
 			mockFetch.mockRejectedValue(new Error("ECONNREFUSED"));
 
-			// Should still fall back to stale cache (invalidation sets expiry=now, within grace period)
+			// Should still fall back to stale cache
 			const result = await checkBalance("user-inv-fallback", "token-10");
 			expect(result.ok).toBe(true);
 			expect(result.balance).toBe(30);

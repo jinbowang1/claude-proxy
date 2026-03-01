@@ -11,6 +11,7 @@ interface BalanceResult {
 interface CacheEntry {
 	balance: number;
 	totalAvailable: number;
+	claudeBalance: number;
 	expiry: number;
 }
 
@@ -33,7 +34,7 @@ export async function checkBalance(userId: string, token: string): Promise<Balan
 		return {
 			balance: cached.balance,
 			totalAvailable: cached.totalAvailable,
-			ok: cached.balance > 0 || cached.totalAvailable > 0,
+			ok: cached.claudeBalance > 0 || cached.totalAvailable > 0,
 		};
 	}
 
@@ -53,6 +54,7 @@ export async function checkBalance(userId: string, token: string): Promise<Balan
 		const data = (await res.json()) as {
 			balance?: number;
 			totalAvailable?: number;
+			claudeBalance?: number;
 			// legacy fields kept for reference
 			freeTokens?: number;
 			dailyFreeTokens?: number;
@@ -61,9 +63,11 @@ export async function checkBalance(userId: string, token: string): Promise<Balan
 		const balance = data.balance ?? 0;
 		// totalAvailable = dailyFreeTokens + subscriptionTokens + freeTokens (server-calculated)
 		const totalAvailable = data.totalAvailable ?? 0;
+		const claudeBalance = data.claudeBalance ?? 0;
 
-		cache.set(userId, { balance, totalAvailable, expiry: now + CACHE_TTL_MS });
-		return { balance, totalAvailable, ok: balance > 0 || totalAvailable > 0 };
+		cache.set(userId, { balance, totalAvailable, claudeBalance, expiry: now + CACHE_TTL_MS });
+		// Claude proxy: primarily check claudeBalance, totalAvailable as fallback
+		return { balance, totalAvailable, ok: claudeBalance > 0 || totalAvailable > 0 };
 	} catch (err) {
 		// Network error — fail closed, but allow stale cache within grace period
 		console.warn("Balance check error:", err);
@@ -85,7 +89,7 @@ function fallbackToStaleCache(
 		return {
 			balance: cached.balance,
 			totalAvailable: cached.totalAvailable,
-			ok: cached.balance > 0 || cached.totalAvailable > 0,
+			ok: cached.claudeBalance > 0 || cached.totalAvailable > 0,
 		};
 	}
 	return { balance: 0, totalAvailable: 0, ok: false, serviceUnavailable: true };
