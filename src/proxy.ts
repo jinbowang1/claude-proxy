@@ -1,3 +1,4 @@
+import { Readable } from "stream";
 import type { FastifyInstance } from "fastify";
 import { verifyToken } from "./auth.js";
 import { checkBalance } from "./balance.js";
@@ -53,7 +54,7 @@ export function registerProxyRoute(app: FastifyInstance): void {
 
 		// 4. Build upstream request headers
 		const upstreamHeaders: Record<string, string> = {
-			"x-api-key": config.anthropicApiKey,
+			"x-api-key": balanceResult.anthropicApiKey || config.anthropicApiKey,
 			"content-type": "application/json",
 		};
 		for (const header of FORWARD_HEADERS) {
@@ -174,8 +175,7 @@ export function registerProxyRoute(app: FastifyInstance): void {
 }
 
 /** Convert a Web ReadableStream<Uint8Array> to a Node.js Readable */
-function readableStreamToNodeReadable(webStream: ReadableStream<Uint8Array>): import("stream").Readable {
-	const { Readable } = require("stream") as typeof import("stream");
+function readableStreamToNodeReadable(webStream: ReadableStream<Uint8Array>): Readable {
 	const reader = webStream.getReader();
 
 	return new Readable({

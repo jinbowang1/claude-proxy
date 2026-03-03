@@ -6,12 +6,15 @@ interface BalanceResult {
 	ok: boolean;
 	/** true when the billing server could not be reached */
 	serviceUnavailable?: boolean;
+	/** Per-user Anthropic API key (from key pool), null = use default */
+	anthropicApiKey?: string | null;
 }
 
 interface CacheEntry {
 	balance: number;
 	totalAvailable: number;
 	claudeBalance: number;
+	anthropicApiKey: string | null;
 	expiry: number;
 }
 
@@ -34,7 +37,8 @@ export async function checkBalance(userId: string, token: string): Promise<Balan
 		return {
 			balance: cached.balance,
 			totalAvailable: cached.totalAvailable,
-			ok: cached.claudeBalance > 0 || cached.totalAvailable > 0,
+			ok: cached.claudeBalance > 0,
+			anthropicApiKey: cached.anthropicApiKey,
 		};
 	}
 
@@ -55,6 +59,7 @@ export async function checkBalance(userId: string, token: string): Promise<Balan
 			balance?: number;
 			totalAvailable?: number;
 			claudeBalance?: number;
+			anthropicApiKey?: string | null;
 			// legacy fields kept for reference
 			freeTokens?: number;
 			dailyFreeTokens?: number;
@@ -64,10 +69,11 @@ export async function checkBalance(userId: string, token: string): Promise<Balan
 		// totalAvailable = dailyFreeTokens + subscriptionTokens + freeTokens (server-calculated)
 		const totalAvailable = data.totalAvailable ?? 0;
 		const claudeBalance = data.claudeBalance ?? 0;
+		const anthropicApiKey = data.anthropicApiKey ?? null;
 
-		cache.set(userId, { balance, totalAvailable, claudeBalance, expiry: now + CACHE_TTL_MS });
-		// Claude proxy: primarily check claudeBalance, totalAvailable as fallback
-		return { balance, totalAvailable, ok: claudeBalance > 0 || totalAvailable > 0 };
+		cache.set(userId, { balance, totalAvailable, claudeBalance, anthropicApiKey, expiry: now + CACHE_TTL_MS });
+		// Claude proxy: only check claudeBalance (totalAvailable is for non-Claude models)
+		return { balance, totalAvailable, ok: claudeBalance > 0, anthropicApiKey };
 	} catch (err) {
 		// Network error — fail closed, but allow stale cache within grace period
 		console.warn("Balance check error:", err);
@@ -89,7 +95,8 @@ function fallbackToStaleCache(
 		return {
 			balance: cached.balance,
 			totalAvailable: cached.totalAvailable,
-			ok: cached.claudeBalance > 0 || cached.totalAvailable > 0,
+			ok: cached.claudeBalance > 0,
+			anthropicApiKey: cached.anthropicApiKey,
 		};
 	}
 	return { balance: 0, totalAvailable: 0, ok: false, serviceUnavailable: true };
