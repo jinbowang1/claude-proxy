@@ -42,7 +42,7 @@ describe("checkBalance", () => {
 		expect(result.totalAvailable).toBe(0);
 	});
 
-	it("returns ok:true when totalAvailable > 0 (non-Claude user)", async () => {
+	it("returns ok:false but openRouterOk:true when totalAvailable > 0 (non-Claude user)", async () => {
 		vi.stubGlobal(
 			"fetch",
 			vi.fn().mockResolvedValue({
@@ -52,7 +52,8 @@ describe("checkBalance", () => {
 		);
 
 		const result = await checkBalance("user-freeonly", "token-2");
-		expect(result.ok).toBe(true);
+		expect(result.ok).toBe(false); // Claude balance is 0
+		expect(result.openRouterOk).toBe(true); // totalAvailable > 0
 		expect(result.totalAvailable).toBe(300000);
 	});
 
@@ -83,7 +84,7 @@ describe("checkBalance", () => {
 		expect(result.serviceUnavailable).toBeUndefined();
 	});
 
-	it("returns ok:true when user has dailyFreeTokens (via totalAvailable)", async () => {
+	it("returns ok:false but openRouterOk:true when user has dailyFreeTokens (via totalAvailable)", async () => {
 		vi.stubGlobal(
 			"fetch",
 			vi.fn().mockResolvedValue({
@@ -100,7 +101,8 @@ describe("checkBalance", () => {
 		);
 
 		const result = await checkBalance("user-daily", "token-daily");
-		expect(result.ok).toBe(true);
+		expect(result.ok).toBe(false); // Claude balance is 0
+		expect(result.openRouterOk).toBe(true); // totalAvailable > 0
 		expect(result.totalAvailable).toBe(100000);
 	});
 

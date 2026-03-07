@@ -10,6 +10,8 @@ export interface UsageReport {
 	cacheCreationTokens: number;
 	/** Cost in USD */
 	cost: number;
+	/** Provider name, defaults to "anthropic" */
+	provider?: string;
 }
 
 interface FailedReport {
@@ -35,7 +37,7 @@ export function reportUsage(token: string, report: UsageReport): void {
 
 	const payload = {
 		model: report.model,
-		provider: "anthropic",
+		provider: report.provider ?? "anthropic",
 		inputTokens: report.inputTokens,
 		outputTokens: report.outputTokens,
 		cacheReadTokens: report.cacheReadTokens,

@@ -55,7 +55,7 @@ describe("proxy route /v1/messages", () => {
 		mockFetch = vi.fn();
 		vi.stubGlobal("fetch", mockFetch);
 		vi.mocked(verifyToken).mockResolvedValue({ userId: "user-1" });
-		vi.mocked(checkBalance).mockResolvedValue({ balance: 10, totalAvailable: 0, ok: true });
+		vi.mocked(checkBalance).mockResolvedValue({ balance: 10, totalAvailable: 0, ok: true, openRouterOk: false });
 	});
 
 	afterEach(() => {
@@ -94,6 +94,7 @@ describe("proxy route /v1/messages", () => {
 				balance: 0,
 				totalAvailable: 0,
 				ok: false,
+				openRouterOk: false,
 			});
 			const app = createApp();
 			const res = await app.inject({
@@ -111,6 +112,7 @@ describe("proxy route /v1/messages", () => {
 				balance: 0,
 				totalAvailable: 0,
 				ok: false,
+				openRouterOk: false,
 				serviceUnavailable: true,
 			});
 			const app = createApp();
@@ -129,6 +131,7 @@ describe("proxy route /v1/messages", () => {
 				balance: 0,
 				totalAvailable: 300000,
 				ok: true,
+				openRouterOk: true,
 			});
 			mockFetch.mockResolvedValue(
 				mockAnthropicJsonResponse({
