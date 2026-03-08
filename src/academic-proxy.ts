@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { verifyToken } from "./auth.js";
 import { config } from "./config.js";
 import { checkBalance } from "./balance.js";
+import * as scholarBrowser from "./scholar-browser.js";
 
 /** Allowed target domains for academic proxy */
 const ALLOWED_HOSTS = [
@@ -42,10 +43,109 @@ function forwardHeaders(
 	return out;
 }
 
+/**
+ * Verify JWT from Authorization header. Returns userId or sends 401.
+ */
+async function verifyAuth(request: any, reply: any): Promise<string | null> {
+	const authHeader = request.headers["authorization"];
+	if (!authHeader || typeof authHeader !== "string" || !authHeader.startsWith("Bearer ")) {
+		reply.status(401).send({ error: "Missing or invalid Authorization header" });
+		return null;
+	}
+	try {
+		const jwt = await verifyToken(authHeader.slice(7));
+		return jwt.userId;
+	} catch (err) {
+		reply.status(401).send({
+			error: "Invalid or expired token",
+			details: err instanceof Error ? err.message : "Unknown error",
+		});
+		return null;
+	}
+}
+
 export function registerAcademicProxyRoute(app: FastifyInstance): void {
+	// ── Google Scholar Browser API (Playwright, no SerpAPI cost) ──
+
+	app.get("/academic/scholar/search", async (request, reply) => {
+		const userId = await verifyAuth(request, reply);
+		if (!userId) return;
+
+		const q = request.query as Record<string, string>;
+		const query = q.query || q.q || "";
+		if (!query) return reply.status(400).send({ error: "Missing query parameter" });
+
+		const limit = Math.min(parseInt(q.limit || "10"), 100);
+		const yearFrom = q.year_from ? parseInt(q.year_from) : undefined;
+		const yearTo = q.year_to ? parseInt(q.year_to) : undefined;
+
+		try {
+			const result = await scholarBrowser.searchPapers(query, limit, yearFrom, yearTo);
+			return reply.send(result);
+		} catch (err) {
+			request.log.error({ err }, "Scholar browser search failed");
+			return reply.status(502).send({
+				error: "Scholar browser search failed",
+				details: err instanceof Error ? err.message : "Unknown",
+			});
+		}
+	});
+
+	app.get("/academic/scholar/author", async (request, reply) => {
+		const userId = await verifyAuth(request, reply);
+		if (!userId) return;
+
+		const q = request.query as Record<string, string>;
+		const name = q.name || q.query || "";
+		if (!name) return reply.status(400).send({ error: "Missing name parameter" });
+
+		try {
+			const result = await scholarBrowser.searchAuthors(name);
+			return reply.send(result);
+		} catch (err) {
+			request.log.error({ err }, "Scholar browser author search failed");
+			return reply.status(502).send({
+				error: "Scholar browser author search failed",
+				details: err instanceof Error ? err.message : "Unknown",
+			});
+		}
+	});
+
+	app.get("/academic/scholar/author-papers", async (request, reply) => {
+		const userId = await verifyAuth(request, reply);
+		if (!userId) return;
+
+		const q = request.query as Record<string, string>;
+		const userId2 = q.user_id || "";
+		if (!userId2) return reply.status(400).send({ error: "Missing user_id parameter" });
+
+		const limit = Math.min(parseInt(q.limit || "100"), 1000);
+
+		try {
+			const result = await scholarBrowser.getAuthorPapers(userId2, limit);
+			return reply.send(result);
+		} catch (err) {
+			request.log.error({ err }, "Scholar browser author-papers failed");
+			return reply.status(502).send({
+				error: "Scholar browser author-papers failed",
+				details: err instanceof Error ? err.message : "Unknown",
+			});
+		}
+	});
+
+	app.get("/academic/scholar/status", async (request, reply) => {
+		const userId = await verifyAuth(request, reply);
+		if (!userId) return;
+
+		const result = await scholarBrowser.checkStatus();
+		return reply.send(result);
+	});
+
+	// ── Generic academic proxy (fetch-based) ──
+
 	// Match /academic/:host/<path>
 	app.all("/academic/:host/*", async (request, reply) => {
-		// 1. Extract and verify JWT (login check only, no balance deduction)
+		// 1. Verify JWT
 		const authHeader = request.headers["authorization"];
 		if (!authHeader || typeof authHeader !== "string" || !authHeader.startsWith("Bearer ")) {
 			return reply.status(401).send({ error: "Missing or invalid Authorization header" });
