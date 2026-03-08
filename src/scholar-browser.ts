@@ -25,7 +25,7 @@ let launching = false;
  * Get or create the browser context. Lazy-init on first request.
  */
 async function getContext(): Promise<BrowserContext> {
-	if (context && browser?.isConnected()) {
+	if (context) {
 		resetIdleTimer();
 		return context;
 	}
@@ -35,31 +35,71 @@ async function getContext(): Promise<BrowserContext> {
 		while (launching) {
 			await new Promise((r) => setTimeout(r, 200));
 		}
-		if (context && browser?.isConnected()) return context;
+		if (context) return context;
 	}
 
 	launching = true;
 	try {
 		const { chromium } = await import("playwright");
-		browser = await chromium.launch({
+		const fs = await import("fs");
+
+		// Use persistent user data dir to keep cookies/sessions across restarts
+		const userDataDir = "/tmp/scholar-browser-data";
+		if (!fs.existsSync(userDataDir)) {
+			fs.mkdirSync(userDataDir, { recursive: true });
+		}
+
+		// Launch persistent context (acts like a real user profile)
+		context = await chromium.launchPersistentContext(userDataDir, {
 			headless: true,
 			args: [
 				"--no-sandbox",
 				"--disable-setuid-sandbox",
-				"--disable-dev-shm-usage", // Important for low-memory servers
+				"--disable-dev-shm-usage",
 				"--disable-gpu",
 				"--single-process",
 				"--no-zygote",
+				"--disable-blink-features=AutomationControlled",
 			],
-		});
-		context = await browser.newContext({
 			userAgent: USER_AGENT,
 			locale: "en-US",
 			viewport: { width: 1280, height: 800 },
 			extraHTTPHeaders: {
 				"Accept-Language": "en-US,en;q=0.9",
 			},
+			// Bypass automation detection
+			ignoreDefaultArgs: ["--enable-automation"],
 		});
+
+		// Stealth: remove automation signals on every new page
+		context.on("page", async (page) => {
+			await page.addInitScript(() => {
+				// Remove webdriver flag
+				Object.defineProperty(navigator, "webdriver", { get: () => false });
+				// Fake plugins
+				Object.defineProperty(navigator, "plugins", {
+					get: () => [1, 2, 3, 4, 5],
+				});
+				// Fake languages
+				Object.defineProperty(navigator, "languages", {
+					get: () => ["en-US", "en"],
+				});
+				// Fake chrome runtime
+				(window as any).chrome = { runtime: {} };
+				// Override permissions query
+				const originalQuery = (window as any).navigator.permissions?.query;
+				if (originalQuery) {
+					(window as any).navigator.permissions.query = (parameters: any) =>
+						parameters.name === "notifications"
+							? Promise.resolve({ state: "denied" } as any)
+							: originalQuery(parameters);
+				}
+			});
+		});
+
+		// For persistent context, browser is not directly accessible
+		// but we can check connection via context
+		browser = (context as any)._browser || null;
 
 		// Prime cookies by visiting homepage
 		const page = await context.newPage();
@@ -68,7 +108,7 @@ async function getContext(): Promise<BrowserContext> {
 				timeout: PAGE_TIMEOUT_MS,
 				waitUntil: "domcontentloaded",
 			});
-			await page.waitForTimeout(1000);
+			await page.waitForTimeout(2000);
 		} catch {
 			// Ignore — best effort
 		} finally {
@@ -96,11 +136,9 @@ async function closeBrowser(): Promise<void> {
 		clearTimeout(idleTimer);
 		idleTimer = null;
 	}
+	// Persistent context close also closes its browser
 	try {
 		await context?.close();
-	} catch {}
-	try {
-		await browser?.close();
 	} catch {}
 	context = null;
 	browser = null;
