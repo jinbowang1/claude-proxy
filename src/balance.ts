@@ -12,6 +12,8 @@ interface BalanceResult {
 	anthropicApiKey?: string | null;
 	/** OpenRouter API key from domestic server, null = not available */
 	openrouterApiKey?: string | null;
+	/** SerpAPI key from domestic server, null = not available */
+	serpapiKey?: string | null;
 }
 
 interface CacheEntry {
@@ -20,6 +22,7 @@ interface CacheEntry {
 	claudeBalance: number;
 	anthropicApiKey: string | null;
 	openrouterApiKey: string | null;
+	serpapiKey: string | null;
 	expiry: number;
 }
 
@@ -46,6 +49,7 @@ export async function checkBalance(userId: string, token: string): Promise<Balan
 			openRouterOk: cached.totalAvailable > 0,
 			anthropicApiKey: cached.anthropicApiKey,
 			openrouterApiKey: cached.openrouterApiKey,
+			serpapiKey: cached.serpapiKey,
 		};
 	}
 
@@ -68,6 +72,7 @@ export async function checkBalance(userId: string, token: string): Promise<Balan
 			claudeBalance?: number;
 			anthropicApiKey?: string | null;
 			openrouterApiKey?: string | null;
+			serpapiKey?: string | null;
 			// legacy fields kept for reference
 			freeTokens?: number;
 			dailyFreeTokens?: number;
@@ -79,10 +84,11 @@ export async function checkBalance(userId: string, token: string): Promise<Balan
 		const claudeBalance = data.claudeBalance ?? 0;
 		const anthropicApiKey = data.anthropicApiKey ?? null;
 		const openrouterApiKey = data.openrouterApiKey ?? null;
+		const serpapiKey = data.serpapiKey ?? null;
 
-		cache.set(userId, { balance, totalAvailable, claudeBalance, anthropicApiKey, openrouterApiKey, expiry: now + CACHE_TTL_MS });
+		cache.set(userId, { balance, totalAvailable, claudeBalance, anthropicApiKey, openrouterApiKey, serpapiKey, expiry: now + CACHE_TTL_MS });
 		// Claude proxy: only check claudeBalance (totalAvailable is for non-Claude models)
-		return { balance, totalAvailable, ok: claudeBalance > 0, openRouterOk: totalAvailable > 0, anthropicApiKey, openrouterApiKey };
+		return { balance, totalAvailable, ok: claudeBalance > 0, openRouterOk: totalAvailable > 0, anthropicApiKey, openrouterApiKey, serpapiKey };
 	} catch (err) {
 		// Network error — fail closed, but allow stale cache within grace period
 		console.warn("Balance check error:", err);
@@ -108,6 +114,7 @@ function fallbackToStaleCache(
 			openRouterOk: cached.totalAvailable > 0,
 			anthropicApiKey: cached.anthropicApiKey,
 			openrouterApiKey: cached.openrouterApiKey,
+			serpapiKey: cached.serpapiKey,
 		};
 	}
 	return { balance: 0, totalAvailable: 0, ok: false, openRouterOk: false, serviceUnavailable: true };

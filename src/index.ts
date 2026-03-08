@@ -2,6 +2,7 @@ import Fastify from "fastify";
 import { config } from "./config.js";
 import { registerProxyRoute } from "./proxy.js";
 import { registerOpenRouterRoute } from "./openrouter-proxy.js";
+import { registerAcademicProxyRoute } from "./academic-proxy.js";
 
 const app = Fastify({
 	logger: {
@@ -17,6 +18,7 @@ app.get("/health", async () => {
 // Main proxy routes
 registerProxyRoute(app);
 registerOpenRouterRoute(app);
+registerAcademicProxyRoute(app);
 
 // Start server
 app.listen({ port: config.port, host: "0.0.0.0" }, (err, address) => {
