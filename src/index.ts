@@ -8,6 +8,7 @@ const app = Fastify({
 	logger: {
 		level: "info",
 	},
+	bodyLimit: 50 * 1024 * 1024, // 50MB — Claude API 长对话需要
 });
 
 // Health check
