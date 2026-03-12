@@ -4,7 +4,7 @@ interface BalanceResult {
 	balance: number;
 	totalAvailable: number;
 	ok: boolean;
-	/** true when totalAvailable > 0 (for non-Claude models like OpenRouter) */
+	/** @deprecated OpenRouter now also uses claudeBalance, same as `ok` */
 	openRouterOk: boolean;
 	/** true when the billing server could not be reached */
 	serviceUnavailable?: boolean;
@@ -46,7 +46,7 @@ export async function checkBalance(userId: string, token: string): Promise<Balan
 			balance: cached.balance,
 			totalAvailable: cached.totalAvailable,
 			ok: cached.claudeBalance > 0,
-			openRouterOk: cached.totalAvailable > 0,
+			openRouterOk: cached.claudeBalance > 0,
 			anthropicApiKey: cached.anthropicApiKey,
 			openrouterApiKey: cached.openrouterApiKey,
 			serpapiKey: cached.serpapiKey,
@@ -87,8 +87,8 @@ export async function checkBalance(userId: string, token: string): Promise<Balan
 		const serpapiKey = data.serpapiKey ?? null;
 
 		cache.set(userId, { balance, totalAvailable, claudeBalance, anthropicApiKey, openrouterApiKey, serpapiKey, expiry: now + CACHE_TTL_MS });
-		// Claude proxy: only check claudeBalance (totalAvailable is for non-Claude models)
-		return { balance, totalAvailable, ok: claudeBalance > 0, openRouterOk: totalAvailable > 0, anthropicApiKey, openrouterApiKey, serpapiKey };
+		// Both Claude and OpenRouter use claudeBalance for billing
+		return { balance, totalAvailable, ok: claudeBalance > 0, openRouterOk: claudeBalance > 0, anthropicApiKey, openrouterApiKey, serpapiKey };
 	} catch (err) {
 		// Network error — fail closed, but allow stale cache within grace period
 		console.warn("Balance check error:", err);
@@ -111,7 +111,7 @@ function fallbackToStaleCache(
 			balance: cached.balance,
 			totalAvailable: cached.totalAvailable,
 			ok: cached.claudeBalance > 0,
-			openRouterOk: cached.totalAvailable > 0,
+			openRouterOk: cached.claudeBalance > 0,
 			anthropicApiKey: cached.anthropicApiKey,
 			openrouterApiKey: cached.openrouterApiKey,
 			serpapiKey: cached.serpapiKey,

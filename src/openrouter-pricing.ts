@@ -5,9 +5,9 @@ interface OpenRouterModelPricing {
 }
 
 const OPENROUTER_PRICING: Record<string, OpenRouterModelPricing> = {
-	"openai/gpt-5.4": {
-		input: 2.5,
-		output: 15,
+	"openai/gpt-5.4-pro": {
+		input: 30,
+		output: 180,
 	},
 	"openai/gpt-5.2": {
 		input: 1.25,
@@ -17,9 +17,12 @@ const OPENROUTER_PRICING: Record<string, OpenRouterModelPricing> = {
 		input: 0.14,
 		output: 0.28,
 	},
-	"google/gemini-3-pro-image-preview": {
-		input: 2.0,
-		output: 12.0,
+	// Nano Banana 2: text output $3/M, image output $60/M
+	// OpenRouter usage doesn't distinguish image vs text output tokens,
+	// so we bill at the image rate ($60/M) since this model is used for image generation.
+	"google/gemini-3.1-flash-image-preview": {
+		input: 0.5,
+		output: 60.0,
 	},
 };
 

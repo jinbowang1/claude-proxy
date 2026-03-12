@@ -38,7 +38,7 @@ export function registerOpenRouterRoute(app: FastifyInstance): void {
 			});
 		}
 
-		// 2. Check balance (use openRouterOk which checks totalAvailable)
+		// 2. Check balance (openRouterOk now checks claudeBalance, same as Claude)
 		const balanceResult = await checkBalance(jwt.userId, token);
 		if (!balanceResult.openRouterOk) {
 			if (balanceResult.serviceUnavailable) {
