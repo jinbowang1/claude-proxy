@@ -17,6 +17,10 @@ const OPENROUTER_PRICING: Record<string, OpenRouterModelPricing> = {
 		input: 0.14,
 		output: 0.28,
 	},
+	"google/gemini-3-pro-image-preview": {
+		input: 2.0,
+		output: 12.0,
+	},
 };
 
 const DEFAULT_OPENROUTER_PRICING: OpenRouterModelPricing = OPENROUTER_PRICING["openai/gpt-5.2"]!;
