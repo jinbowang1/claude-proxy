@@ -90,16 +90,22 @@ function enqueueFailedReport(token: string, payload: Record<string, unknown>): v
 /** Process the retry queue — called on a timer. Exported for testing. */
 export function _processRetryQueue(): void {
 	const now = Date.now();
-	let i = 0;
-	while (i < failedReports.length) {
+	// Collect indices to process (iterate in reverse so splicing doesn't shift unprocessed indices)
+	const toProcess: number[] = [];
+	for (let i = 0; i < failedReports.length; i++) {
 		const entry = failedReports[i]!;
-		if (entry.nextRetry > now) {
-			i++;
-			continue;
+		if (entry.nextRetry <= now) {
+			toProcess.push(i);
 		}
+	}
 
-		// Remove from queue before retrying
-		failedReports.splice(i, 1);
+	// Process in reverse order so splice indices remain valid
+	for (let j = toProcess.length - 1; j >= 0; j--) {
+		const idx = toProcess[j]!;
+		const entry = failedReports[idx]!;
+
+		// Remove from queue now — we'll re-add on failure
+		failedReports.splice(idx, 1);
 		entry.retries++;
 
 		if (entry.retries > MAX_RETRIES) {
@@ -107,7 +113,7 @@ export function _processRetryQueue(): void {
 			continue;
 		}
 
-		// Re-send; on failure it will be re-enqueued with incremented retry count
+		// Re-send; on failure, re-enqueue with incremented retry count and backoff
 		fetch(`${config.domesticApiUrl}/api/billing/usage`, {
 			method: "POST",
 			headers: {

@@ -42,18 +42,18 @@ describe("checkBalance", () => {
 		expect(result.totalAvailable).toBe(0);
 	});
 
-	it("returns ok:false but openRouterOk:true when totalAvailable > 0 (non-Claude user)", async () => {
+	it("returns ok:true when totalCredits > 0 (unified credits check)", async () => {
 		vi.stubGlobal(
 			"fetch",
 			vi.fn().mockResolvedValue({
 				ok: true,
-				json: () => Promise.resolve({ balance: 0, totalAvailable: 300000, claudeBalance: 0 }),
+				json: () => Promise.resolve({ balance: 0, totalAvailable: 300000, claudeBalance: 0, totalCredits: 30 }),
 			}),
 		);
 
 		const result = await checkBalance("user-freeonly", "token-2");
-		expect(result.ok).toBe(false); // Claude balance is 0
-		expect(result.openRouterOk).toBe(true); // totalAvailable > 0
+		expect(result.ok).toBe(true); // totalCredits > 0
+		expect(result.openRouterOk).toBe(true); // same as ok now
 		expect(result.totalAvailable).toBe(300000);
 	});
 
@@ -84,7 +84,7 @@ describe("checkBalance", () => {
 		expect(result.serviceUnavailable).toBeUndefined();
 	});
 
-	it("returns ok:false but openRouterOk:true when user has dailyFreeTokens (via totalAvailable)", async () => {
+	it("returns ok:true when user has dailyFreeCredits (via totalCredits)", async () => {
 		vi.stubGlobal(
 			"fetch",
 			vi.fn().mockResolvedValue({
@@ -96,13 +96,14 @@ describe("checkBalance", () => {
 					subscriptionTokens: 0,
 					totalAvailable: 100000,
 					claudeBalance: 0,
+					totalCredits: 30, // 每日免费积分
 				}),
 			}),
 		);
 
 		const result = await checkBalance("user-daily", "token-daily");
-		expect(result.ok).toBe(false); // Claude balance is 0
-		expect(result.openRouterOk).toBe(true); // totalAvailable > 0
+		expect(result.ok).toBe(true); // totalCredits > 0
+		expect(result.openRouterOk).toBe(true); // same as ok
 		expect(result.totalAvailable).toBe(100000);
 	});
 
@@ -143,12 +144,12 @@ describe("checkBalance", () => {
 		vi.stubGlobal("fetch", mockFetch);
 
 		await checkBalance("user-auth", "my-jwt-token");
-		expect(mockFetch).toHaveBeenCalledWith("http://billing.test/api/billing/balance", {
+		expect(mockFetch).toHaveBeenCalledWith("http://billing.test/api/billing/balance", expect.objectContaining({
 			headers: {
 				Authorization: "Bearer my-jwt-token",
 				"Content-Type": "application/json",
 			},
-		});
+		}));
 	});
 
 	// ────────────────────────────────────────────────

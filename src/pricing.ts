@@ -37,7 +37,12 @@ const PRICING: Record<string, ModelPricing> = {
 const DEFAULT_PRICING: ModelPricing = PRICING["claude-sonnet-4-6"]!;
 
 export function getModelPricing(modelId: string): ModelPricing {
-	return PRICING[modelId] ?? DEFAULT_PRICING;
+	const pricing = PRICING[modelId];
+	if (!pricing) {
+		console.warn(`[pricing] Unknown model "${modelId}", falling back to Sonnet pricing`);
+		return DEFAULT_PRICING;
+	}
+	return pricing;
 }
 
 export interface UsageTokens {

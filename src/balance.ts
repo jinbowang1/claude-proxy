@@ -20,6 +20,7 @@ interface CacheEntry {
 	balance: number;
 	totalAvailable: number;
 	claudeBalance: number;
+	totalCredits: number;
 	anthropicApiKey: string | null;
 	openrouterApiKey: string | null;
 	serpapiKey: string | null;
@@ -30,6 +31,10 @@ interface CacheEntry {
 const cache = new Map<string, CacheEntry>();
 const CACHE_TTL_MS = 2 * 60 * 1000; // 2 minutes
 const STALE_CACHE_TTL_MS = 10 * 60 * 1000; // 10-minute grace period for stale cache
+const FETCH_TIMEOUT_MS = 8000; // 8-second timeout for balance check fetch
+
+/** In-flight dedup: prevents concurrent balance checks for the same user */
+const inFlight = new Map<string, Promise<BalanceResult>>();
 
 /**
  * Check user balance from the domestic billing server.
@@ -40,25 +45,48 @@ export async function checkBalance(userId: string, token: string): Promise<Balan
 	const now = Date.now();
 	const cached = cache.get(userId);
 
-	// Fresh cache hit
+	// Fresh cache hit — use totalCredits as the primary check
 	if (cached && cached.expiry > now) {
+		const hasCredits = cached.totalCredits > 0;
 		return {
 			balance: cached.balance,
 			totalAvailable: cached.totalAvailable,
-			ok: cached.claudeBalance > 0,
-			openRouterOk: cached.claudeBalance > 0,
+			ok: hasCredits,
+			openRouterOk: hasCredits,
 			anthropicApiKey: cached.anthropicApiKey,
 			openrouterApiKey: cached.openrouterApiKey,
 			serpapiKey: cached.serpapiKey,
 		};
 	}
 
+	// Dedup: if there's already an in-flight request for this user, reuse it
+	const existing = inFlight.get(userId);
+	if (existing) return existing;
+
+	const promise = _doCheckBalance(userId, token, cached, now);
+	inFlight.set(userId, promise);
+	try {
+		return await promise;
+	} finally {
+		inFlight.delete(userId);
+	}
+}
+
+async function _doCheckBalance(
+	userId: string,
+	token: string,
+	cached: CacheEntry | undefined,
+	now: number,
+): Promise<BalanceResult> {
+	const controller = new AbortController();
+	const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 	try {
 		const res = await fetch(`${config.domesticApiUrl}/api/billing/balance`, {
 			headers: {
 				Authorization: `Bearer ${token}`,
 				"Content-Type": "application/json",
 			},
+			signal: controller.signal,
 		});
 
 		if (!res.ok) {
@@ -70,29 +98,29 @@ export async function checkBalance(userId: string, token: string): Promise<Balan
 			balance?: number;
 			totalAvailable?: number;
 			claudeBalance?: number;
+			totalCredits?: number;
 			anthropicApiKey?: string | null;
 			openrouterApiKey?: string | null;
 			serpapiKey?: string | null;
-			// legacy fields kept for reference
-			freeTokens?: number;
-			dailyFreeTokens?: number;
-			subscriptionTokens?: number;
 		};
 		const balance = data.balance ?? 0;
-		// totalAvailable = dailyFreeTokens + subscriptionTokens + freeTokens (server-calculated)
 		const totalAvailable = data.totalAvailable ?? 0;
 		const claudeBalance = data.claudeBalance ?? 0;
+		// totalCredits is the unified credits check; fall back to claudeBalance for old servers
+		const totalCredits = data.totalCredits ?? claudeBalance;
 		const anthropicApiKey = data.anthropicApiKey ?? null;
 		const openrouterApiKey = data.openrouterApiKey ?? null;
 		const serpapiKey = data.serpapiKey ?? null;
 
-		cache.set(userId, { balance, totalAvailable, claudeBalance, anthropicApiKey, openrouterApiKey, serpapiKey, expiry: now + CACHE_TTL_MS });
-		// Both Claude and OpenRouter use claudeBalance for billing
-		return { balance, totalAvailable, ok: claudeBalance > 0, openRouterOk: claudeBalance > 0, anthropicApiKey, openrouterApiKey, serpapiKey };
+		cache.set(userId, { balance, totalAvailable, claudeBalance, totalCredits, anthropicApiKey, openrouterApiKey, serpapiKey, expiry: now + CACHE_TTL_MS });
+		const hasCredits = totalCredits > 0;
+		return { balance, totalAvailable, ok: hasCredits, openRouterOk: hasCredits, anthropicApiKey, openrouterApiKey, serpapiKey };
 	} catch (err) {
-		// Network error — fail closed, but allow stale cache within grace period
+		// Network error or timeout — fail closed, but allow stale cache within grace period
 		console.warn("Balance check error:", err);
 		return fallbackToStaleCache(userId, cached, now);
+	} finally {
+		clearTimeout(timeout);
 	}
 }
 
@@ -107,11 +135,12 @@ function fallbackToStaleCache(
 ): BalanceResult {
 	if (cached && cached.expiry > now - STALE_CACHE_TTL_MS) {
 		console.warn(`Using stale cache for user ${userId}`);
+		const hasCredits = cached.totalCredits > 0;
 		return {
 			balance: cached.balance,
 			totalAvailable: cached.totalAvailable,
-			ok: cached.claudeBalance > 0,
-			openRouterOk: cached.claudeBalance > 0,
+			ok: hasCredits,
+			openRouterOk: hasCredits,
 			anthropicApiKey: cached.anthropicApiKey,
 			openrouterApiKey: cached.openrouterApiKey,
 			serpapiKey: cached.serpapiKey,
